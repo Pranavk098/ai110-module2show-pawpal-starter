@@ -6,42 +6,110 @@
 from datetime import date
 from pawpal_system import Pet, Owner, Task, Scheduler
 
+try:
+    from tabulate import tabulate
+except ImportError:
+    tabulate = None
+
 
 # ═════════════════════════════════════════════════════════════
 #  DISPLAY HELPERS
 # ═════════════════════════════════════════════════════════════
 
+RESET = "\033[0m"
+COLORS = {
+    "high": "\033[91m",
+    "medium": "\033[93m",
+    "low": "\033[92m",
+    "pending": "\033[96m",
+    "done": "\033[92m",
+    "skipped": "\033[90m",
+    "warning": "\033[95m",
+    "info": "\033[94m",
+}
+
+CATEGORY_EMOJI = {
+    "feeding": "🍽️",
+    "exercise": "🏃",
+    "grooming": "🛁",
+    "medical": "💊",
+    "play": "🎾",
+    "training": "🎯",
+    "hygiene": "🧼",
+    "other": "🧩",
+}
+
+STATUS_EMOJI = {
+    "pending": "🟦",
+    "done": "✅",
+    "skipped": "⏭️",
+}
+
+
+def _colorize(text: str, color_key: str) -> str:
+    return f"{COLORS.get(color_key, '')}{text}{RESET}"
+
+
+def _priority_badge(priority: str) -> str:
+    return _colorize(priority.upper(), priority)
+
+
+def _status_badge(status: str) -> str:
+    icon = STATUS_EMOJI.get(status, "•")
+    return f"{icon} {_colorize(status.title(), status)}"
+
+
+def _category_badge(category: str) -> str:
+    icon = CATEGORY_EMOJI.get(category, "🧩")
+    return f"{icon} {category}"
+
+
+def _print_table(rows: list, headers: list) -> None:
+    if not rows:
+        return
+    if tabulate:
+        print(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
+    else:
+        print("  | ".join(headers))
+        print("-" * (len("  | ".join(headers)) + 6))
+        for row in rows:
+            print("  | ".join(str(c) for c in row))
+
 def print_header(label: str) -> None:
     print(f"\n{'*' * 60}")
-    print(f"  SCENARIO: {label}")
+    print(f"  {_colorize('SCENARIO', 'info')}: {label}")
     print(f"{'*' * 60}\n")
 
 
 def print_owner_summary(owner: Owner) -> None:
     pet_names = ", ".join(p.name for p in owner.pets) or "none"
-    print(f"  Owner       : {owner.name}")
-    print(f"  Pets        : {pet_names}")
-    print(f"  Budget      : {owner.available_minutes} min")
-    print(f"  Day starts  : {owner.day_start_hour}:00")
-    print(f"  Buffer/gap  : {owner.buffer_minutes} min between tasks")
+    print(f"  👤 Owner       : {owner.name}")
+    print(f"  🐾 Pets        : {pet_names}")
+    print(f"  ⏱️ Budget      : {owner.available_minutes} min")
+    print(f"  🌅 Day starts  : {owner.day_start_hour}:00")
+    print(f"  🧘 Buffer/gap  : {owner.buffer_minutes} min between tasks")
 
 
 def print_task_table(tasks: list) -> None:
-    print(f"  {'PRIORITY':<8}  {'CATEGORY':<10}  {'TITLE':<28}  DUR   PET")
-    print(f"  {'-'*8}  {'-'*10}  {'-'*28}  {'-'*5}  {'-'*10}")
+    rows = []
     for t in tasks:
         pet_name = t.pet.name if t.pet else "-"
         dep_tag  = " [has deps]" if t.depends_on else ""
         rec_tag  = f" [{t.recurrence}]" if t.is_recurring() else ""
-        print(
-            f"  {t.priority.upper():<8}  {t.category:<10}  "
-            f"{t.title + dep_tag + rec_tag:<28}  {t.duration_minutes:<5}  {pet_name}"
-        )
+        rows.append([
+            _priority_badge(t.priority),
+            _category_badge(t.category),
+            f"{t.title}{dep_tag}{rec_tag}",
+            t.duration_minutes,
+            pet_name,
+            _status_badge(t.status),
+        ])
+    _print_table(rows, ["Priority", "Category", "Title", "Dur", "Pet", "Status"])
 
 
 def print_schedule(owner: Owner, schedule) -> None:
     print("=" * 60)
-    print(f"  PawPal+ Daily Schedule  --  {owner.name}")
+    print(f"  🐾 PawPal+ Daily Schedule  --  {owner.name}")
     print("=" * 60)
 
     # ── scheduled tasks ───────────────────────────────────────
@@ -52,48 +120,71 @@ def print_schedule(owner: Owner, schedule) -> None:
         bar        = "#" * bar_n + "-" * (24 - bar_n)
         efficiency = schedule.efficiency_score(total)
 
-        print(f"\n  Scheduled  ({len(schedule.scheduled_tasks)} tasks, "
+        print(f"\n  ✅ Scheduled  ({len(schedule.scheduled_tasks)} tasks, "
               f"{used}/{total} min)")
         print(f"  [{bar}] {efficiency}% efficient\n")
 
-        for idx, st in enumerate(schedule.scheduled_tasks, 1):
+        rows = []
+        for idx, st in enumerate(schedule.tasks_sorted_by_start(), 1):
             t       = st.task
             pet_tag = f"  [{t.pet.name}]" if t.pet else ""
             rec_tag = f"  ({t.recurrence})" if t.is_recurring() else ""
-            print(f"  {idx}. [{t.priority.upper():6}] {t.title}{pet_tag}{rec_tag}")
-            print(f"       Category : {t.category}")
-            print(f"       Duration : {t.duration_minutes} min")
-            print(f"       Time     : {st.time_label(owner.day_start_hour)}")
-            print()
+            rows.append([
+                idx,
+                st.time_label(owner.day_start_hour),
+                f"{_category_badge(t.category)} {t.title}{pet_tag}{rec_tag}",
+                _priority_badge(t.priority),
+                _status_badge(t.status),
+                f"{t.duration_minutes} min",
+            ])
+        _print_table(rows, ["#", "Time", "Task", "Priority", "Status", "Duration"])
     else:
         print("\n  No tasks could be scheduled in the available time.\n")
 
     # ── skipped tasks ─────────────────────────────────────────
     if schedule.skipped_tasks:
         print("-" * 60)
-        print(f"  Skipped  ({len(schedule.skipped_tasks)} tasks)\n")
+        print(f"  ⏭️ Skipped  ({len(schedule.skipped_tasks)} tasks)\n")
+        rows = []
         for task, reason in schedule.skipped_tasks:
-            print(f"  [SKIP] {task.title}  ({task.duration_minutes} min, {task.priority})")
-            print(f"         {reason}")
-            print()
+            rows.append([
+                f"{_category_badge(task.category)} {task.title}",
+                _priority_badge(task.priority),
+                f"{task.duration_minutes} min",
+                reason,
+            ])
+        _print_table(rows, ["Task", "Priority", "Duration", "Reason"])
 
     # ── warnings ──────────────────────────────────────────────
     if schedule.warnings:
         print("-" * 60)
-        print(f"  Warnings  ({len(schedule.warnings)})\n")
+        print(f"  {_colorize('⚠️ Warnings', 'warning')}  ({len(schedule.warnings)})\n")
+        warning_actions = {
+            "time_overlap": "Adjust preferred start times so the windows do not overlap.",
+            "double_feeding": "Space feedings at least 120 minutes apart.",
+            "exercise_after_meal": "Let the dog rest at least 30 minutes after eating.",
+            "duplicate_task": "Rename or remove duplicate tasks to avoid confusion.",
+            "circular_dependency": "Review dependency links and break the cycle.",
+        }
+        rows = []
         for w in schedule.warnings:
-            print(f"  [!] [{w.warning_type}]")
-            print(f"      {w.message}")
-            print()
+            rows.append([
+                w.warning_type,
+                w.message,
+                warning_actions.get(w.warning_type, "Review this warning and adjust task inputs."),
+            ])
+        _print_table(rows, ["Type", "What happened", "Suggested action"])
 
     # ── priority breakdown ────────────────────────────────────
     bd = schedule.priority_breakdown()
     print("-" * 60)
-    print("  Priority breakdown:")
+    print("  📊 Priority breakdown:")
+    rows = []
     for level in ("high", "medium", "low"):
         s = bd[level]["scheduled"]
         k = bd[level]["skipped"]
-        print(f"    {level.upper():<6}  scheduled={s}  skipped={k}")
+        rows.append([_priority_badge(level), s, k])
+    _print_table(rows, ["Priority", "Scheduled", "Skipped"])
 
     print("=" * 60)
 
@@ -136,11 +227,17 @@ def _show_next_day(schedule) -> None:
     """Print the auto-generated task list for tomorrow."""
     next_tasks = schedule.get_recurring_tasks_for_next_day()
     print(f"\n  --- Tomorrow's auto-generated task list ({len(next_tasks)} tasks) ---")
+    rows = []
     for t in next_tasks:
         # Check whether this task was skipped today (if so it was promoted)
         was_skipped = any(task.title == t.title for task, _ in schedule.skipped_tasks)
         tag = " [PRIORITY PROMOTED - was skipped today]" if was_skipped else ""
-        print(f"  {t.priority.upper():<6} {t.title}{tag}")
+        rows.append([
+            _priority_badge(t.priority),
+            f"{_category_badge(t.category)} {t.title}{tag}",
+            _status_badge(t.status),
+        ])
+    _print_table(rows, ["Priority", "Task", "Status"])
 
 
 # ═════════════════════════════════════════════════════════════

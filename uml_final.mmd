@@ -1,0 +1,119 @@
+classDiagram
+    class Pet {
+        +String name
+        +String species
+        +int age
+        +String health_notes
+        +List~Task~ tasks
+        +Pet(name, species, age, health_notes)
+        +add_task(task) None
+        +remove_task(task) None
+        +list_tasks() List~Task~
+    }
+
+    class Owner {
+        +String name
+        +int available_minutes
+        +int day_start_hour
+        +int buffer_minutes
+        +List~Pet~ pets
+        +Owner(name, available_minutes, pets, day_start_hour, buffer_minutes)
+        +save_to_json(tasks, filepath) None
+        +load_from_json(filepath) tuple~Owner, List~Task~~
+        -_task_to_dict(task) dict
+        -_task_from_dict(task_data, pet_by_name) Task
+    }
+
+    class Task {
+        +String title
+        +int duration_minutes
+        +String priority
+        +Pet pet
+        +String category
+        +String recurrence
+        +int earliest_start_minute
+        +int deadline_minute
+        +List~Task~ depends_on
+        +String status
+        +String preferred_time
+        +date due_date
+        +Task next_occurrence
+        +priority_rank() int
+        +mark_done() None
+        +mark_skipped() None
+        +reset() None
+        +is_recurring() bool
+        +clone_for_next_occurrence(due_date) Task
+    }
+
+    class ScheduledTask {
+        +Task task
+        +int start_minute
+        +ScheduledTask(task, start_minute)
+        +end_minute() int
+        +time_label(day_start_hour) String
+        +mark_done() None
+    }
+
+    class ConflictWarning {
+        +String warning_type
+        +String message
+        +List~Task~ tasks
+        +ConflictWarning(warning_type, message, tasks)
+    }
+
+    class Schedule {
+        +List~ScheduledTask~ scheduled_tasks
+        +List~Tuple~ skipped_tasks
+        +int total_minutes_used
+        +List~ConflictWarning~ warnings
+        +add_task(st) None
+        +skip_task(task, reason) None
+        +add_warning(warning) None
+        +is_empty() bool
+        +tasks_for_pet(pet) List~ScheduledTask~
+        +tasks_by_priority(priority) List~ScheduledTask~
+        +tasks_by_category(category) List~ScheduledTask~
+        +pending_tasks() List~ScheduledTask~
+        +completed_tasks() List~ScheduledTask~
+        +tasks_sorted_by_start() List~ScheduledTask~
+        +efficiency_score(available_minutes) float
+        +priority_breakdown() dict
+        +remaining_minutes(available_minutes) int
+        +get_recurring_tasks_for_next_day() List~Task~
+        +summary() String
+    }
+
+    class Scheduler {
+        +Owner owner
+        +List~Task~ tasks
+        +Scheduler(owner, tasks)
+        +generate() Schedule
+        +collect_next_occurrences() List~Task~
+        +sort_by_time(tasks) List~Task~
+        +filter_by_status(status, tasks) List~Task~
+        +filter_by_pet(pet_name, tasks) List~Task~
+        -_fill_gaps(schedule, minutes_used) None
+        -_topological_sort(tasks) List~Task~
+        -_check_duplicates(schedule) None
+        -_check_time_overlaps(schedule) None
+        -_check_conflicts(schedule) None
+        -_sort_by_priority(tasks) List~Task~
+        -_fits_in_window(task, used) bool
+    }
+
+    Owner "1" --> "0..*" Pet : owns
+    Owner ..> Task : persists
+    Task "0..*" --> "0..1" Pet : assigned_to
+    Pet "1" --> "0..*" Task : manages
+    Task "0..*" ..> "0..*" Task : depends_on
+    Task --> Task : next_occurrence
+
+    Scheduler "1" --> "1" Owner : uses
+    Scheduler "1" --> "0..*" Task : processes
+    Scheduler "1" ..> "1" Schedule : builds
+
+    Schedule "1" --> "0..*" ScheduledTask : contains
+    Schedule "1" --> "0..*" ConflictWarning : reports
+    ScheduledTask "1" --> "1" Task : wraps
+    ConflictWarning "1" --> "0..*" Task : references

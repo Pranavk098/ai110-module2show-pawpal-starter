@@ -28,6 +28,7 @@
 # ─────────────────────────────────────────────────────────────
 
 import heapq
+import json
 from datetime import date, timedelta
 
 
@@ -51,10 +52,31 @@ class Pet:
         self.species      = species
         self.age          = age           # E3
         self.health_notes = health_notes  # E3
+        self.tasks: list  = []            # tasks assigned to this pet
+
+    def add_task(self, task) -> None:
+        """Assign a task to this pet and track it in the pet's task list."""
+        if task not in self.tasks:
+            self.tasks.append(task)
+        task.pet = self
+
+    def remove_task(self, task) -> None:
+        """Remove a task from this pet's task list and unassign if linked."""
+        if task in self.tasks:
+            self.tasks.remove(task)
+        if getattr(task, "pet", None) == self:
+            task.pet = None
+
+    def list_tasks(self) -> list:
+        """Return a shallow copy of this pet's assigned tasks."""
+        return list(self.tasks)
 
     def __repr__(self) -> str:
         notes = f", notes={self.health_notes!r}" if self.health_notes else ""
-        return f"Pet(name={self.name!r}, species={self.species!r}{notes})"
+        return (
+            f"Pet(name={self.name!r}, species={self.species!r}, "
+            f"tasks={len(self.tasks)}{notes})"
+        )
 
 
 # ═════════════════════════════════════════════════════════════
@@ -90,6 +112,136 @@ class Owner:
             f"day_start={self.day_start_hour}:00, "
             f"buffer={self.buffer_minutes}min)"
         )
+
+    @staticmethod
+    def _task_to_dict(task: "Task") -> dict:
+        """Serialize one Task to a JSON-safe dictionary."""
+        return {
+            "title": task.title,
+            "duration_minutes": task.duration_minutes,
+            "priority": task.priority,
+            "pet": task.pet.name if task.pet else None,
+            "category": task.category,
+            "recurrence": task.recurrence,
+            "earliest_start_minute": task.earliest_start_minute,
+            "deadline_minute": task.deadline_minute,
+            "depends_on": [dep.title for dep in task.depends_on],
+            "status": task.status,
+            "preferred_time": task.preferred_time,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+        }
+
+    @staticmethod
+    def _task_from_dict(task_data: dict, pet_by_name: dict) -> "Task":
+        """Build one Task from dictionary data (dependency links added later)."""
+        due_raw = task_data.get("due_date")
+        due_date = date.fromisoformat(due_raw) if due_raw else date.today()
+        pet_name = task_data.get("pet")
+
+        task = Task(
+            title=task_data["title"],
+            duration_minutes=int(task_data["duration_minutes"]),
+            priority=task_data["priority"],
+            pet=pet_by_name.get(pet_name),
+            category=task_data.get("category", "other"),
+            recurrence=task_data.get("recurrence", "none"),
+            earliest_start_minute=int(task_data.get("earliest_start_minute", 0)),
+            deadline_minute=task_data.get("deadline_minute"),
+            depends_on=[],
+            preferred_time=task_data.get("preferred_time"),
+            due_date=due_date,
+        )
+
+        status = task_data.get("status", "pending")
+        task.status = status if status in Task.VALID_STATUSES else "pending"
+        return task
+
+    def save_to_json(self, tasks: list, filepath: str = "data.json") -> None:
+        """
+        Save owner, pets, and tasks to a JSON file.
+
+        Args:
+            tasks (list): Task objects currently in memory.
+            filepath (str): Target file path (default: data.json).
+        """
+        data = {
+            "owner": {
+                "name": self.name,
+                "available_minutes": self.available_minutes,
+                "day_start_hour": self.day_start_hour,
+                "buffer_minutes": self.buffer_minutes,
+            },
+            "pets": [
+                {
+                    "name": pet.name,
+                    "species": pet.species,
+                    "age": pet.age,
+                    "health_notes": pet.health_notes,
+                }
+                for pet in self.pets
+            ],
+            "tasks": [self._task_to_dict(task) for task in tasks],
+        }
+
+        with open(filepath, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2)
+
+    @classmethod
+    def load_from_json(cls, filepath: str = "data.json"):
+        """
+        Load owner, pets, and tasks from a JSON file.
+
+        Returns:
+            tuple[Owner, list]: Reconstructed owner and task list.
+        """
+        with open(filepath, "r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        owner_data = data.get("owner")
+        pets_data = data.get("pets", [])
+        tasks_data = data.get("tasks", [])
+
+        if not owner_data:
+            raise ValueError("Saved data is missing owner information.")
+
+        pets = [
+            Pet(
+                name=pet_data["name"],
+                species=pet_data["species"],
+                age=int(pet_data.get("age", 0)),
+                health_notes=pet_data.get("health_notes", ""),
+            )
+            for pet_data in pets_data
+        ]
+        pet_by_name = {pet.name: pet for pet in pets}
+
+        owner = cls(
+            name=owner_data["name"],
+            available_minutes=int(owner_data["available_minutes"]),
+            pets=pets,
+            day_start_hour=int(owner_data.get("day_start_hour", 8)),
+            buffer_minutes=int(owner_data.get("buffer_minutes", 0)),
+        )
+
+        tasks = [cls._task_from_dict(task_data, pet_by_name) for task_data in tasks_data]
+        task_by_title = {task.title: task for task in tasks}
+
+        for task, task_data in zip(tasks, tasks_data):
+            dep_titles = task_data.get("depends_on", [])
+            task.depends_on = [
+                task_by_title[dep_title]
+                for dep_title in dep_titles
+                if dep_title in task_by_title
+            ]
+
+        # Rebuild per-pet task collections from loaded tasks.
+        for pet in pets:
+            pet.tasks = []
+        for task in tasks:
+            if task.pet is not None:
+                task.pet.add_task(task)
+
+        return owner, tasks
 
 
 # ═════════════════════════════════════════════════════════════
