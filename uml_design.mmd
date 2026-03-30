@@ -1,53 +1,53 @@
-classDiagram
-    class Owner {
-        +String name
-        +int available_minutes
-        +List~Pet~ pets
-        +Owner(name: str, available_minutes: int, pets: List~Pet~)
-    }
+    classDiagram
+        class Owner {
+            +String name
+            +int available_minutes
+            +List~Pet~ pets
+            +Owner(name: str, available_minutes: int, pets: List~Pet~)
+        }
 
-    class Pet {
-        +String name
-        +String species
-        +Pet(name: str, species: str)
-    }
+        class Pet {
+            +String name
+            +String species
+            +Pet(name: str, species: str)
+        }
 
-    class Task {
-        +String title
-        +int duration_minutes
-        +String priority
-        +Task(title: str, duration_minutes: int, priority: str)
-        +priority_rank() int
-    }
+        class Task {
+            +String title
+            +int duration_minutes
+            +String priority
+            +Task(title: str, duration_minutes: int, priority: str)
+            +priority_rank() int
+        }
 
-    class ScheduledTask {
-        +Task task
-        +int start_minute
-        +ScheduledTask(task: Task, start_minute: int)
-        +end_minute() int
-    }
+        class ScheduledTask {
+            +Task task
+            +int start_minute
+            +ScheduledTask(task: Task, start_minute: int)
+            +end_minute() int
+        }
 
-    class Schedule {
-        +List~ScheduledTask~ scheduled_tasks
-        +List~tuple~ skipped_tasks
-        +int total_minutes_used
-        +Schedule()
-        +add_task(st: ScheduledTask) void
-        +skip_task(task: Task, reason: str) void
-    }
+        class Schedule {
+            +List~ScheduledTask~ scheduled_tasks
+            +List~tuple~ skipped_tasks
+            +int total_minutes_used
+            +Schedule()
+            +add_task(st: ScheduledTask) void
+            +skip_task(task: Task, reason: str) void
+        }
 
-    class Scheduler {
-        +Owner owner
-        +List~Task~ tasks
-        +Scheduler(owner: Owner, tasks: List~Task~)
-        +generate() Schedule
-        -_sort_by_priority(tasks: List~Task~) List~Task~
-        -_fits_in_window(task: Task, used: int) bool
-    }
+        class Scheduler {
+            +Owner owner
+            +List~Task~ tasks
+            +Scheduler(owner: Owner, tasks: List~Task~)
+            +generate() Schedule
+            -_sort_by_priority(tasks: List~Task~) List~Task~
+            -_fits_in_window(task: Task, used: int) bool
+        }
 
-    Owner "1" --> "1..*" Pet : owns
-    Scheduler "1" --> "1" Owner : uses
-    Scheduler "1" --> "many" Task : processes
-    Scheduler "1" ..> "1" Schedule : creates
-    Schedule "1" --> "many" ScheduledTask : contains
-    ScheduledTask "1" --> "1" Task : wraps
+        Owner "1" --> "1..*" Pet : owns
+        Scheduler "1" --> "1" Owner : uses
+        Scheduler "1" --> "many" Task : processes
+        Scheduler "1" ..> "1" Schedule : creates
+        Schedule "1" --> "many" ScheduledTask : contains
+        ScheduledTask "1" --> "1" Task : wraps
